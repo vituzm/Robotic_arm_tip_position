@@ -49,6 +49,7 @@
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
+TIM_HandleTypeDef htim8;
 TIM_HandleTypeDef htim10;
 TIM_HandleTypeDef htim11;
 
@@ -56,9 +57,12 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 volatile uint16_t medidas[N_AMOSTRAS] ={0}; 				// valores do adc
-const float segmentos[N_AMOSTRAS - 1] = {20.0, 15.0, 9.0}; 	// Valores dos tamanhos de cada segmento do braço
-float angulos_padrao_graus[N_AMOSTRAS] = {0, 0, 0, 0};		// Valores dos angulos de offset de cada segmento do braço
-int soltou = 0; 											// variavel de debounce
+const float segmentos[N_AMOSTRAS - 1] = {19.121, 15.032, 9.0175}; 	// Valores dos tamanhos de cada segmento do braço
+uint16_t OFFSETS[4] = {0};
+
+uint8_t soltou = 0; 											// variavel de debounce
+char set_offset;
+
 float coordenadas_xyz[3] = {0};								// variavel para salvar as coordenadas
 float angulos_rad[N_AMOSTRAS] = {0}; 						// angulos em radianos
 float angulos_graus[N_AMOSTRAS] = {0}; 						// angulos em graus
@@ -80,6 +84,7 @@ static void MX_ADC1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM10_Init(void);
 static void MX_TIM11_Init(void);
+static void MX_TIM8_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -90,7 +95,7 @@ static void MX_TIM11_Init(void);
 // Calculo dos angulos em radianos e graus
 void calc_ang(){
 	for(int i = 0; i < N_AMOSTRAS; i++){
-		angulos_graus[i] = (medidas[i]*POT_ANG_MAX)/ADC_BIT_RESOLUTION; // Regra de três para saber o ang conforme a tensão medida do adc
+		angulos_graus[i] = ((medidas[i]-OFFSETS[i])*POT_ANG_MAX)/ADC_BIT_RESOLUTION; // Regra de três para saber o ang conforme a tensão medida do adc
 		if(i != 0 && i != 3){
 			angulos_graus[i] += angulos_graus[i-1];
 		}
@@ -167,33 +172,42 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM10_Init();
   MX_TIM11_Init();
+  MX_TIM8_Init();
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start_DMA(&hadc1, medidas, N_AMOSTRAS);
-  HAL_TIM_Base_Start_IT(&htim10);
-  HAL_TIM_Base_Start_IT(&htim11);
-  strncpy(msg, "COORDENADAS X Y Z \n\r", msgSIZE);
+  HAL_TIM_Base_Start(&htim11); // Timer para debounce
+  HAL_TIM_Base_Start_IT(&htim10); // Timer para envio de msg na serial
+  HAL_TIM_OC_Start_IT(&htim8, TIM_CHANNEL_1); // Timer de freq sampling do adc
+
+  strncpy(msg, "COORDENADAS X Y Z \n\r", msgSIZE); //Iniciando serial
   HAL_UART_Transmit_IT(&huart2, msg, strlen(msg));
-
-
-
+  HAL_UART_Receive_IT(&huart2, &set_offset, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  // Debounce
 	  if(__HAL_TIM_GET_FLAG(&htim11, TIM_FLAG_UPDATE)){
-		 __HAL_TIM_CLEAR_FLAG(&htim11, TIM_FLAG_UPDATE); // limpa o flag uif
+		 __HAL_TIM_CLEAR_FLAG(&htim11, TIM_FLAG_UPDATE);
 
-		 if(HAL_GPIO_ReadPin(BOTAO_GPIO_Port, BOTAO_Pin) == 1 && soltou == 0){
+		 if(HAL_GPIO_ReadPin(BOTAO_GPIO_Port, BOTAO_Pin) == 0 && soltou == 0){
 		  	soltou = 1;
-
-		  	}
+		  	coordenadas_xyz[0] = x;
+		  	coordenadas_xyz[1] = y;
+		  	coordenadas_xyz[2] = z;
+		  	snprintf(msg, msgSIZE, "{\"X\": %.2f, \"Y\": %.2f, \"Z\": %.2f,  \"guardar\": %i}\n",
+		  			 coordenadas_xyz[0], coordenadas_xyz[1], coordenadas_xyz[2], soltou);
+		  	HAL_UART_Transmit_IT(&huart2, msg, strlen(msg));
 		 }
+	  }
 
-		 if(HAL_GPIO_ReadPin(BOTAO_GPIO_Port, BOTAO_Pin) == 0){
-		  	soltou = 0;
-		 }
+	  if(HAL_GPIO_ReadPin(BOTAO_GPIO_Port, BOTAO_Pin) == 1){
+		  soltou = 0;
+
+	  }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -274,8 +288,8 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ScanConvMode = ENABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+  hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T8_TRGO;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 4;
   hadc1.Init.DMAContinuousRequests = DISABLE;
@@ -324,6 +338,81 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief TIM8 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM8_Init(void)
+{
+
+  /* USER CODE BEGIN TIM8_Init 0 */
+
+  /* USER CODE END TIM8_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
+  /* USER CODE BEGIN TIM8_Init 1 */
+
+  /* USER CODE END TIM8_Init 1 */
+  htim8.Instance = TIM8;
+  htim8.Init.Prescaler = 99;
+  htim8.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim8.Init.Period = 839;
+  htim8.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim8.Init.RepetitionCounter = 0;
+  htim8.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim8, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_OC_Init(&htim8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim8, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_TOGGLE;
+  sConfigOC.Pulse = 10;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_OC_ConfigChannel(&htim8, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim8, &sBreakDeadTimeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM8_Init 2 */
+
+  /* USER CODE END TIM8_Init 2 */
+  HAL_TIM_MspPostInit(&htim8);
 
 }
 
@@ -464,11 +553,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : BOTAO_Pin */
-  GPIO_InitStruct.Pin = BOTAO_Pin;
+  /*Configure GPIO pins : BOTAO_Pin BOTAO_OFFSET_Pin */
+  GPIO_InitStruct.Pin = BOTAO_Pin|BOTAO_OFFSET_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(BOTAO_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
@@ -487,24 +576,29 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance==TIM10)
 	{
-		snprintf(msg, msgSIZE, "{\"x\": %.2f ,\"y\": %.2f, \"z\": %.2f, \"angulo1\": %.2f, \"angulo2\": %.2f, \"angulo3\": %.2f, \"angulo4\": %.2f}\n",x, y, z, angulos_graus[0], angulos_graus[1] - angulos_graus[0], angulos_graus[2] - angulos_graus[1], angulos_graus[3]);
+		snprintf(msg, msgSIZE, "{\"x\": %.2f ,\"y\": %.2f, \"z\": %.2f, \"angulo1\": %.2f, \"angulo2\": %.2f, \"angulo3\": %.2f, \"angulo4\": %.2f}\n",
+				x, y, z, angulos_graus[0], angulos_graus[1] - angulos_graus[0], angulos_graus[2] - angulos_graus[1], angulos_graus[3]);
 		HAL_UART_Transmit_IT(&huart2, msg, strlen(msg));
 	}
 }
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
-	calc_ang();
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	for(int u = 0; u < N_AMOSTRAS; u++){
+		OFFSETS[u] = medidas[u];
+	}
+	HAL_UART_Receive_IT(&huart2, set_offset ,1);
+}
 
-	r = calc_r(); // distancia radial
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
+
+	calc_ang();
+  
+	r = calc_r(); // Distancia radial
 	z = calc_z();
 	x = calc_x(r);
 	y = calc_y(r);
 
-	if(soltou == 0){
-		coordenadas_xyz[0] = x;
-		coordenadas_xyz[1] = y;
-		coordenadas_xyz[2] = z;
-	}
 
 	//snprintf(msg, msgSIZE, "{\"x\": %.2f ,\"y\": %.2f, \"z\": %.2f, \"angulo1\": %i, \"angulo2\": %.2f, \"angulo3\": %.2f, \"angulo4\": %.2f}\n",x, y, z, angulos_graus[0], angulos_graus[1], angulos_graus[2], angulos_graus[3]);
 	HAL_ADC_Start_DMA(&hadc1, medidas, N_AMOSTRAS);
