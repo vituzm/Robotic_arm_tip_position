@@ -553,11 +553,16 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : BOTAO_Pin */
-  GPIO_InitStruct.Pin = BOTAO_Pin;
+  /*Configure GPIO pins : BOTAO_Pin BOTAO_OFFSET_Pin */
+  GPIO_InitStruct.Pin = BOTAO_Pin|BOTAO_OFFSET_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+<<<<<<< HEAD
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(BOTAO_GPIO_Port, &GPIO_InitStruct);
+=======
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+>>>>>>> ef0d341697957f8628c074acbc12bb9a12bbe146
 
   /*Configure GPIO pin : BOTAO_OFFSET_Pin */
   GPIO_InitStruct.Pin = BOTAO_OFFSET_Pin;
@@ -595,11 +600,19 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	}
 	HAL_UART_Receive_IT(&huart2, set_offset ,1);
 }
+<<<<<<< HEAD
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 
 	calc_ang();
 
+=======
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
+
+	calc_ang();
+  
+>>>>>>> ef0d341697957f8628c074acbc12bb9a12bbe146
 	r = calc_r(); // Distancia radial
 	z = calc_z();
 	x = calc_x(r);

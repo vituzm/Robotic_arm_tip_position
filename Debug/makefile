@@ -60,8 +60,13 @@ all: main-build
 main-build: braco_mecanico.elf secondary-outputs
 
 # Tool invocations
+<<<<<<< HEAD
 braco_mecanico.elf braco_mecanico.map: $(OBJS) $(USER_OBJS) F:\braco_mecanico\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	arm-none-eabi-gcc -o "braco_mecanico.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"F:\braco_mecanico\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="braco_mecanico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+=======
+braco_mecanico.elf braco_mecanico.map: $(OBJS) $(USER_OBJS) G:\braco_mecanico\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "braco_mecanico.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"G:\braco_mecanico\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="braco_mecanico.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+>>>>>>> ef0d341697957f8628c074acbc12bb9a12bbe146
 	@echo 'Finished building target: $@'
 	@echo ' '
 
